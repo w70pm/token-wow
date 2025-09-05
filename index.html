@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WoW Token EU — Retail + MoP Classic</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        background: #0b0f14;
+        color: #e6f1ff;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: #121822;
+        border-radius: 16px;
+        padding: 16px;
+      }
+      .price {
+        font-size: 40px;
+        margin: 4px 0 8px;
+      }
+      .err {
+        color: #ff8899;
+      }
+      .muted {
+        color: #8aa1b1;
+      }
+      .loading {
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>WoW Token — Европа</h1>
+      <p class="muted">Retail (The War Within) и Mists of Pandaria Classic</p>
+      <div class="grid">
+        <div class="card">
+          <div class="label">Retail — EU</div>
+          <div class="price" id="retailPrice">—</div>
+          <div class="muted" id="retailUpdated"></div>
+        </div>
+        <div class="card">
+          <div class="label">MoP Classic — EU</div>
+          <div class="price" id="classicPrice">—</div>
+          <div class="muted" id="classicUpdated"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const fmt = (n) => new Intl.NumberFormat("ru-RU").format(n);
+      const fromUTC = (iso) =>
+        new Date(iso).toLocaleString("ru-RU", { hour12: false });
+
+      // Функция для получения OAuth токена
+      async function getAuthToken() {
+        try {
+          const response = await fetch("https://oauth.battle.net/token", {
+            method: "POST",
+            headers: {
+              Authorization:
+                "Basic " +
+                btoa(
+                  "efa219dff2c04f31afcf3d70526cc540:kUv35rngPbN1x6377D8u14o33CIyXLpG"
+                ),
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: "grant_type=client_credentials",
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `HTTP ${response.status}: ${await response.text()}`
+            );
+          }
+
+          const data = await response.json();
+          return data.access_token;
+        } catch (error) {
+          console.error("Auth error:", error);
+          throw error;
+        }
+      }
+
+      // Функция для получения данных о токене
+      async function fetchTokenData(namespace, elementId, updatedElementId) {
+        try {
+          const token = await getAuthToken();
+
+          const response = await fetch(
+            `https://eu.api.blizzard.com/data/wow/token/index?namespace=${namespace}&locale=ru_RU`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+              },
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(
+              `HTTP ${response.status}: ${await response.text()}`
+            );
+          }
+
+          const data = await response.json();
+
+          if (data && data.price) {
+            const gold = Math.floor(data.price / 10000);
+            $(elementId).textContent = fmt(gold) + " золота";
+            $(updatedElementId).textContent =
+              "Обновлено: " +
+              fromUTC(
+                new Date(data.last_updated_timestamp * 1000).toISOString()
+              );
+          } else {
+            throw new Error("Нет данных о цене");
+          }
+        } catch (error) {
+          console.error(`Fetch error for ${namespace}:`, error);
+          $(elementId).innerHTML = '<span class="err">ошибка загрузки</span>';
+          $(updatedElementId).textContent = "";
+        }
+      }
+
+      // Основная функция загрузки данных
+      async function loadData() {
+        // Добавляем класс loading для визуального отображения загрузки
+        $("retailPrice").classList.add("loading");
+        $("classicPrice").classList.add("loading");
+
+        // Получаем данные для Retail и Classic одновременно
+        await Promise.allSettled([
+          fetchTokenData("dynamic-eu", "retailPrice", "retailUpdated"),
+          fetchTokenData(
+            "dynamic-classic-eu",
+            "classicPrice",
+            "classicUpdated"
+          ),
+        ]);
+
+        // Убираем класс loading после загрузки
+        $("retailPrice").classList.remove("loading");
+        $("classicPrice").classList.remove("loading");
+      }
+
+      // Запускаем загрузку данных при загрузке страницы
+      document.addEventListener("DOMContentLoaded", () => {
+        loadData();
+
+        // Обновляем данные каждые 10 минут (как в cron)
+        setInterval(loadData, 600000);
+      });
+    </script>
+  </body>
+</html>
